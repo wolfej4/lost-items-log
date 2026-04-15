@@ -64,6 +64,10 @@ header {
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.full { grid-column: 1 / -1; }
+.field.date-time { grid-column: span 2; }
+.datetime-row { display: flex; gap: 8px; }
+.datetime-row input[type="date"] { flex: 3; min-width: 0; }
+.datetime-row select { flex: 2; min-width: 0; }
 label { font-size: .62rem; letter-spacing: .12em; text-transform: uppercase; color: var(--teal-dim); }
 input, select, textarea {
   background: var(--ocean-light); border: 1px solid var(--rule); border-bottom: 2px solid var(--teal-dim);
@@ -228,9 +232,12 @@ textarea { resize: vertical; min-height: 60px; }
         <label for="f-found-by">Found By (Initials)</label>
         <input id="f-found-by" type="text" placeholder="JD" maxlength="4">
       </div>
-      <div class="field">
-        <label for="f-date">Date Found</label>
-        <input id="f-date" type="datetime-local">
+      <div class="field date-time">
+        <label>Date Found</label>
+        <div class="datetime-row">
+          <input id="f-date" type="date">
+          <select id="f-time"></select>
+        </div>
       </div>
       <div class="field full">
         <label for="f-desc">Description</label>
@@ -380,12 +387,34 @@ const TYPE_LABELS = {
   jewelry: 'Jewelry', clothing: 'Clothing', other: 'Other'
 };
 
+// ── TIME SELECT HELPERS ───────────────
+function buildTimeOptions(sel) {
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const h12 = h % 12 || 12;
+      const opt = document.createElement('option');
+      opt.value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+      opt.textContent = `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function nearestHalfHour(date) {
+  const m = date.getMinutes();
+  const slot = m < 15 ? 0 : m < 45 ? 30 : 0;
+  const h = m < 45 ? date.getHours() : (date.getHours() + 1) % 24;
+  return `${String(h).padStart(2,'0')}:${String(slot).padStart(2,'0')}`;
+}
+
 // ── INIT ──────────────────────────────
 async function init() {
-  // Set default date to now
+  const timeSel = document.getElementById('f-time');
+  buildTimeOptions(timeSel);
   const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  document.getElementById('f-date').value = now.toISOString().slice(0, 16);
+  document.getElementById('f-date').value = now.toISOString().split('T')[0];
+  timeSel.value = nearestHalfHour(now);
 
   await Promise.all([loadStats(), loadItems()]);
 }
@@ -506,6 +535,7 @@ async function createItem() {
   const foundLocation = document.getElementById('f-location').value.trim();
   const foundBy = document.getElementById('f-found-by').value.trim();
   const dateVal = document.getElementById('f-date').value;
+  const timeVal = document.getElementById('f-time').value;
   const customerName = document.getElementById('f-cname').value.trim();
   const customerPhone = document.getElementById('f-cphone').value.trim();
   const notes = document.getElementById('f-notes').value.trim();
@@ -513,7 +543,7 @@ async function createItem() {
   if (!description) return toast('Description is required.', 'error');
   if (!foundBy) return toast('Found-by initials are required.', 'error');
 
-  const foundAt = dateVal ? new Date(dateVal).getTime() : Date.now();
+  const foundAt = dateVal ? new Date(`${dateVal}T${timeVal || '00:00'}:00`).getTime() : Date.now();
 
   try {
     const res = await fetch('/api/lost-items', {
@@ -529,8 +559,8 @@ async function createItem() {
     document.getElementById('f-cphone').value = '';
     document.getElementById('f-notes').value = '';
     const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    document.getElementById('f-date').value = now.toISOString().slice(0, 16);
+    document.getElementById('f-date').value = now.toISOString().split('T')[0];
+    document.getElementById('f-time').value = nearestHalfHour(now);
 
     toast('Item logged.', 'success');
     await Promise.all([loadItems(), loadStats()]);
